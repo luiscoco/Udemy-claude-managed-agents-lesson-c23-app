@@ -42,27 +42,81 @@ CLAUDE_MANAGED_ENVIRONMENT_ID=your_environment_id
 PORT=3023
 ```
 
-## How the application was developed
+## How the app was build
 
-The browser collects inputs; the Node host validates requests; the lesson implementation produces observable evidence. The architecture page walks through the real source with numbered steps, prerequisite configuration, source filenames and code excerpts.
+### 1. Bound a delegated request
 
-### Lesson implementation
+The subtask must contain text within the size cap, and the event budget must be an integer from 1 to 500. Admission is checked before accepting a worker report.
 
-[src/lesson.ts](https://github.com/luiscoco/Udemy-claude-managed-agents-lesson-c23-app/blob/main/src/lesson.ts)
+Source: [src/lesson.ts](src/lesson.ts#L13) · selected statements
 
 ```typescript
-  async run(input) {
+const prompt = text(input, "subtask").trim(),
+  budget = number(input, "eventBudget");
 
-const prompt=text(input,"subtask").trim(), budget=number(input,"eventBudget");
-if(!prompt||prompt.length>8000||!Number.isInteger(budget)||budget<1||budget>500)return report("rejected","Subtask or event budget is invalid",{},["Bound delegated work before admission"]);
-const ended=text(input,"stopReason")==="end_turn", answer=text(input,"workerText").trim();
-return report(ended&&answer?"passed":ended?"incomplete":"paused","A worker report is accepted only after an ordinary completed turn",{accepted:!!(ended&&answer),workerContext:{subtask:prompt,inheritedFilesystem:false,inheritedHistory:false},answer},["Admit a bounded specialist task","Provide explicit context","Observe worker lifecycle","Do not duplicate an uncertain worker"]);
-
-  }
-};
+if (
+  !prompt ||
+  prompt.length > 8000 ||
+  !Number.isInteger(budget) ||
+  budget < 1 ||
+  budget > 500
+)
+  return report("rejected", "Subtask or event budget is invalid", {}, [
+    "Bound delegated work before admission",
+  ]);
 ```
 
-Read the architecture page for the remaining source excerpts and explanations, including input handling and optional provider behavior. The diagram describes this application, rather than implying that an external integration has been implemented.
+### 2. Require both ordinary completion and an answer
+
+Only end_turn with nonempty worker text is accepted. The evidence explicitly marks filesystem and history inheritance false; this sample evaluates a supplied report rather than launching a worker.
+
+Source: [src/lesson.ts](src/lesson.ts#L15) · selected statements
+
+```typescript
+const ended = text(input, "stopReason") === "end_turn",
+  answer = text(input, "workerText").trim();
+
+return report(
+  ended && answer ? "passed" : ended ? "incomplete" : "paused",
+  "A worker report is accepted only after an ordinary completed turn",
+  {
+    accepted: !!(ended && answer),
+    workerContext: {
+      subtask: prompt,
+      inheritedFilesystem: false,
+      inheritedHistory: false,
+    },
+    answer,
+  },
+  [
+    "Admit a bounded specialist task",
+    "Provide explicit context",
+    "Observe worker lifecycle",
+    "Do not duplicate an uncertain worker",
+  ],
+);
+```
+
+### Check your understanding
+
+Run **Accept a bounded worker result** in the application. Compare the result with these scenario expectations:
+
+```json
+{
+  "input": {
+    "subtask": "Summarize the reviewed interface",
+    "eventBudget": 20,
+    "stopReason": "end_turn",
+    "workerText": "The interface has one evidence panel."
+  },
+  "expectedOutcome": "passed",
+  "checkEvidence": {
+    "accepted": true
+  }
+}
+```
+
+Then try **Keep a paused worker incomplete**. Its expected outcome is `paused`; identify the condition or evidence field that explains the difference.
 
 ## Validation
 
