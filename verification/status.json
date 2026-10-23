@@ -1,0 +1,13 @@
+{
+  "lesson": "C23",
+  "title": "Multi-agent Orchestration and Delegation",
+  "path": "lesson-c23\\lesson-c23-app",
+  "port": 3023,
+  "scenarios": 2,
+  "state": "implemented and verified",
+  "liveScope": "text-only commentary about the local result",
+  "typecheck": true,
+  "localTests": true,
+  "browserSmoke": "passed: desktop, mobile, scenario controls, source view",
+  "liveCommentarySmoke": "passed: real text-only session reached end_turn"
+}

@@ -1,0 +1,67 @@
+import Anthropic from "@anthropic-ai/sdk";
+import type { BetaManagedAgentsStreamSessionEvents as StreamEvent } from "@anthropic-ai/sdk/resources/beta/sessions/events";
+export function makeWorkerCollector() {
+  let lastText = "";
+  return { ingest(event: StreamEvent): string | undefined {
+    if (event.type === "agent.message") lastText = event.content.flatMap(b => b.type === "text" ? [b.text] : []).join("\n");
+    if (event.type === "session.error") throw new Error("Worker reported a session error");
+    if (event.type === "session.status_idle") {
+      if (event.stop_reason.type !== "end_turn") throw new Error("Worker paused: " + event.stop_reason.type);
+      if (!lastText.trim()) throw new Error("Worker completed without text");
+      return lastText;
+    }
+    return undefined;
+  } };
+}
+export async function runWorker(client: Anthropic, options: {
+  agentId: string; version: number; environmentId: string; prompt: string; timeoutMs?: number;
+}) {
+  if (!options.prompt.trim() || options.prompt.length > 8000) throw new Error("Bounded explicit subtask required");
+  const timeoutMs = options.timeoutMs ?? 30000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Positive timeout required");
+  const control = new AbortController();
+  const timer = setTimeout(() => control.abort(), timeoutMs);
+  let workerSessionId: string | undefined;
+  let stream: Awaited<ReturnType<typeof client.beta.sessions.events.stream>> | undefined;
+  try {
+    const base = await client.beta.agents.retrieve(options.agentId, { version: options.version }, { signal: control.signal, timeout: timeoutMs });
+    if (base.multiagent != null) throw new Error("This ordinary text-worker helper requires a non-multiagent specialist");
+    const worker = await client.beta.sessions.create({
+      agent: { type: "agent_with_overrides", id: base.id, version: base.version, tools: [], mcp_servers: [], skills: [] },
+      environment_id: options.environmentId,
+      budget: { type: "limit", max_list_cost: { amount: "25", currency: "USD" } }
+    }, { signal: control.signal, maxRetries: 0, timeout: timeoutMs });
+    workerSessionId = worker.id;
+    stream = await client.beta.sessions.events.stream(worker.id, {}, { signal: control.signal, timeout: timeoutMs });
+    await client.beta.sessions.events.send(worker.id, { events: [{ type: "user.message", content: [{ type: "text", text: options.prompt }] }] },
+      { signal: control.signal, maxRetries: 0, timeout: timeoutMs });
+    const collector = makeWorkerCollector();
+    let count = 0;
+    for await (const event of stream) {
+      if (++count > 500) throw new Error("Worker event limit reached");
+      const text = collector.ingest(event);
+      if (text !== undefined) return { workerSessionId, text };
+    }
+    throw new Error("Worker stream ended before completed turn");
+  } catch (cause) {
+    throw Object.assign(new Error("Delegation incomplete; reconcile worker and cleanup", { cause }),
+      { workerSessionId, remoteStop: "unconfirmed" });
+  } finally {
+    clearTimeout(timer);
+    stream?.controller.abort(); // closes observation, does not interrupt remote work
+  }
+}
+export async function returnWorkerResult(client: Anthropic, coordinatorId: string, originalCallEventId: string,
+  text: string, isError = false) {
+  return client.beta.sessions.events.send(coordinatorId, { events: [{ type: "user.custom_tool_result",
+    custom_tool_use_id: originalCallEventId, content: [{ type: "text", text }], is_error: isError
+  }] }, { maxRetries: 0, timeout: 10000 });
+}
+// Authenticate/authorize coordinator, worker agent and environment before calling.
+// The host owns admission limits, durable call/result records and cleanup. A create failure
+// can itself be uncertain even if no worker ID was returned. Reconcile before recreating.
+// On incomplete runs, use a FRESH bounded cleanup signal to interrupt/confirm/archive by policy.
+// Stream closure and local timeout do not prove remote work stopped.
+// This file illustrates separate-session host orchestration. Current Managed Agents ALSO
+// supports native multiagent threads/workflows: native context isolation shares a sandbox,
+// filesystem and vault credentials and is not equivalent to separate-session isolation.

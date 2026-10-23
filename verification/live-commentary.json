@@ -1,0 +1,29 @@
+{
+  "source": "live-provider-commentary",
+  "sessionId": "sesn_01HX7vs2xWVhKgq6s6YcBevf",
+  "answer": "This local experiment demonstrates **multi-agent orchestration**, showing that a worker agent should only have its report accepted after it completes an ordinary, bounded turn. The worker receives an explicit, scoped subtask (\"Summarize the reviewed interface\") without inheriting the parent's filesystem or history. The key lesson is that specialist workers should be given clear context, observed through their lifecycle, and not duplicated if their outcome is uncertain.",
+  "stopReason": "end_turn",
+  "eventTypes": [
+    "session.status_running",
+    "session.thread_status_running",
+    "user.message",
+    "span.model_request_start",
+    "agent.thinking",
+    "agent.message",
+    "span.model_request_end",
+    "session.thread_status_idle",
+    "session.usage",
+    "session.status_idle"
+  ],
+  "requestUsage": [
+    {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "input_tokens": 612,
+      "output_tokens": 122,
+      "speed": "standard"
+    }
+  ],
+  "experimentHash": "d9589ae74b591e6f533c3eef0555095aa0f521e82837dce9a36574180257a899",
+  "scope": "A real text-only model response about the local experiment. External integrations and the experiment's correctness are not certified by this response."
+}
